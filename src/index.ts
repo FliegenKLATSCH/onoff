@@ -3,6 +3,24 @@ import { Worker } from 'worker_threads';
 import { dn } from './dirname.js';
 const gpiod = bindings({ bindings: 'gpiod-wrap', module_root: `${dn}/../..` });
 
+const activeWorkers = new Set<Worker>();
+const terminateWorkersOnExit = () => {
+    for (const worker of activeWorkers) {
+        void worker.terminate();
+    }
+};
+
+function registerWorker(worker: Worker): void {
+    if (activeWorkers.size === 0) process.on('exit', terminateWorkersOnExit);
+    activeWorkers.add(worker);
+}
+
+function unregisterWorker(worker: Worker): void {
+    if (activeWorkers.delete(worker) && activeWorkers.size === 0) {
+        process.removeListener('exit', terminateWorkersOnExit);
+    }
+}
+
 export type High = 1;
 export type Low = 0;
 export type Direction = "in" | "out" | "high" | "low";
@@ -36,6 +54,7 @@ export class Gpio {
     private _edge: Edge;
     private _watchers: Array<ValueCallback>;
     private _worker: Worker | undefined;
+    private _terminations = new Set<Promise<number>>();
 
     public detectChip() {
         return gpiod.detectChip(Gpio._chipRegex);
@@ -57,12 +76,6 @@ export class Gpio {
         gpiod.configureLine(this._chip, this._line, this._gpio, this._direction, this._edge, this._options);
         this._watchers = [];
         this._worker = undefined;
-
-        process.on('exit', () => {
-            if ((typeof this._worker) !== undefined) {
-                this._worker?.terminate();
-            }
-        });
     }
 
     private configureOptions(arg2: Edge | Options | undefined = undefined, arg3: Options | undefined = undefined) {
@@ -172,6 +185,12 @@ export class Gpio {
                 workerData: this._line,
                 resourceLimits: { maxOldGenerationSizeMb: 32 }
             });
+            const worker = this._worker;
+            registerWorker(worker);
+            worker.once('exit', () => {
+                unregisterWorker(worker);
+                if (this._worker === worker) this._worker = undefined;
+            });
             this._worker.on('error', (err) => {
                 console.error('[onoff] Worker error:', err.message || err);
             });
@@ -185,9 +204,16 @@ export class Gpio {
 
     private stopInterruptHandler(): void {
         if (this._worker) {
-            this._worker.removeAllListeners('message');
-            this._worker.terminate();
+            const worker = this._worker;
             this._worker = undefined;
+            worker.removeAllListeners('message');
+            unregisterWorker(worker);
+            const termination = worker.terminate();
+            this._terminations.add(termination);
+            void termination.then(
+                () => this._terminations.delete(termination),
+                () => this._terminations.delete(termination)
+            );
         }
     }
 
@@ -215,6 +241,11 @@ export class Gpio {
 
     public unexport(): void {
         this.unwatchAll();
+    }
+
+    public async unexportAsync(): Promise<void> {
+        this.unwatchAll();
+        await Promise.all(this._terminations);
     }
 
 }

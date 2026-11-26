@@ -92,6 +92,14 @@ type BinaryValue = High | Low;
 - [watch(callback: ValueCallback): void](#watchcallback-valuecallback-void)
 - [unwatch(callback: ValueCallback): void](#unwatchcallback-valuecallback-void)
 - [unwatchAll(): void](#unwatchall-void)
+- [unexport(): void](#unexport-void)
+- [unexportAsync(): Promise<void>](#unexportasync-promisevoid)
+
+#### unexport(): void
+Stops watching and starts worker termination without waiting for it to finish.
+
+#### unexportAsync(): Promise\<void\>
+Stops watching and waits for worker termination, including any shutdown already started by `unwatch`, `unwatchAll`, or `unexport`. Call and await this method during application shutdown; an active worker can keep the process alive, and exit handlers cannot wait for asynchronous cleanup.
 
 #### Gpio(gpio: Number, direction: Direction)</br>Gpio(gpio: Number, direction: Direction, edge: Edge)</br>Gpio(gpio: Number, direction: Direction, options: Options)</br>Gpio(gpio: Number, direction: Direction, edge: Edge, options: Options)
 >Gpio class constructor
