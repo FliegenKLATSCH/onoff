@@ -161,6 +161,13 @@ napi_value configureLine(napi_env env, napi_callback_info info) {
     int offset;
     napi_get_value_int32(env, args[2], &offset);
 
+    if (lineRequest == NULL) {
+        char message[128];
+        snprintf(message, sizeof(message), "Cannot reconfigure GPIO %d: line request is null", offset);
+        napi_throw_error(env, NULL, message);
+        return NULL;
+    }
+
     char direction[16];
     size_t directionLength;
     napi_get_value_string_utf8(env, args[3], direction, 12, &directionLength);
@@ -240,7 +247,9 @@ napi_value configureLine(napi_env env, napi_callback_info info) {
         gpiod_line_settings_free(lineSettings);
         gpiod_line_config_free(lineConfig);
         if (status < 0) {
-            napi_throw_error(env, NULL, strerror(savedErrno));
+            char message[256];
+            snprintf(message, sizeof(message), "Failed to reconfigure GPIO %d: %s", offset, strerror(savedErrno));
+            napi_throw_error(env, NULL, message);
             return NULL;
         }
     napi_value result;
@@ -268,6 +277,17 @@ napi_value getLine(napi_env env, napi_callback_info info) {
         gpiod_request_config_set_consumer(requestConfig, "onoff");
         struct gpiod_line_request* lineRequest;
         lineRequest = gpiod_chip_request_lines(chip, requestConfig, lineConfig);
+        int savedErrno = errno;
+
+        gpiod_line_settings_free(lineSettings);
+        gpiod_line_config_free(lineConfig);
+        gpiod_request_config_free(requestConfig);
+        if (lineRequest == NULL) {
+            char message[256];
+            snprintf(message, sizeof(message), "Failed to request GPIO %d: %s", offset, strerror(savedErrno));
+            napi_throw_error(env, NULL, message);
+            return NULL;
+        }
 
         napi_value result;
         #if UINTPTR_MAX == UINT64_MAX
@@ -276,9 +296,6 @@ napi_value getLine(napi_env env, napi_callback_info info) {
         napi_create_uint32(env, (uintptr_t)lineRequest, &result);
         #endif
 
-        gpiod_line_settings_free(lineSettings);
-        gpiod_line_config_free(lineConfig);
-        gpiod_request_config_free(requestConfig);
         return result;
 }
 
